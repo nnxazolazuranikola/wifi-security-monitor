@@ -1,0 +1,21 @@
+{
+  "_comment": "WiFi Network Monitor Configuration - Copy to monitor_config.json",
+  "network": {
+    "interface": "wlan1",
+    "hostname_interface": "eth0",
+    "_hostname_interface_comment": "Interface connected to network for capturing hostnames (eth0, wlan0, etc)",
+    "channels": [11],
+    "channel_dwell_time": 2.0,
+    "known_devices": []
+  },
+  "_channels_comment": "Set to YOUR router's channels only (e.g., [11, 112] for dual-band)",
+  "_known_devices_comment": "Add MAC addresses of your known devices to reduce alerts",
+  "_nicknames_comment": "Add 'nickname' field directly in data/device_database.json to name devices",
+  "alerts": {
+    "alert_on_new_device": true,
+    "alert_on_iot_device": true
+  },
+  "output": {
+    "log_file": "data/network_devices.log"
+  }
+}

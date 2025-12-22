@@ -1,0 +1,11 @@
+.DS_Store
+*.pyc
+__pycache__/
+data/
+config.json
+monitor_config.json
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

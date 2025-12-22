@@ -1,0 +1,30 @@
+{
+  "_comment": "Copy this to config.json and update as needed. You can start with empty whitelists!",
+  "network": {
+    "interface": "wlan1",
+    "channels": [1, 6, 11],
+    "channel_dwell_time": 1.5,
+    "whitelist_macs": [],
+    "_whitelist_comment": "Leave empty or add router MACs to reduce false positives",
+    "local_device_macs": [],
+    "_local_devices_comment": "Leave empty or add your devices to get 'ATTACKING YOUR NETWORK' alerts"
+  },
+  "detection": {
+    "rssi_jump_threshold": 20,
+    "low_rate_threshold": 6.0,
+    "timing_cv_threshold": 0.3,
+    "sequence_gap_threshold": 100,
+    "burst_threshold_ms": 100,
+    "legitimacy_threshold": 70,
+    "threat_reduction_percentage": 80
+  },
+  "output": {
+    "log_file": "data/attacker_evidence.log",
+    "alerts_enabled": true,
+    "verbose": true
+  },
+  "wifi": {
+    "tx_power_dbm": 17,
+    "path_loss_exponent": 3.5
+  }
+}
