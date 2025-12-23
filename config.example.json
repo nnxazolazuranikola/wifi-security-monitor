@@ -2,7 +2,8 @@
   "_comment": "Copy this to config.json and update as needed. You can start with empty whitelists!",
   "network": {
     "interface": "wlan1",
-    "channels": [], // ADD Change to your own WiFi channels
+    "_channels_comment": "IMPORTANT: Add your WiFi channel(s) here! (e.g., [6, 11] for 2.4GHz or [36, 40, 44, 48] for 5GHz). Leave empty to scan all channels (slower).",
+    "channels": [1,2,3,4,5],
     "channel_dwell_time": 1.5,
     "whitelist_macs": [],
     "_whitelist_comment": "Leave empty or add router MACs to reduce false positives",
