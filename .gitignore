@@ -10,3 +10,4 @@ monitor_config.json
 *.swp
 *.swo
 *~
+attacker_evidence.log
