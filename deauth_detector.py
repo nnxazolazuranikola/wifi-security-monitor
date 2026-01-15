@@ -128,6 +128,127 @@ def estimate_distance(rssi):
     except Exception as e:
         return "Unknown"
 
+def analyze_rssi_for_spoofing(attacker_mac):
+    """
+    Analyze RSSI patterns to detect MAC spoofing.
+    Returns: (is_spoofed, confidence, details)
+    """
+    if attacker_mac not in attackers:
+        return False, 0, []
+    
+    attacker = attackers[attacker_mac]
+    rssi_values = attacker.get('rssi_values', [])
+    
+    if len(rssi_values) < 3:
+        return False, 0, ["Insufficient data"]
+    
+    # Remove None/Unknown values
+    valid_rssi = [r for r in rssi_values if r is not None and r != "Unknown"]
+    if len(valid_rssi) < 3:
+        return False, 0, ["Insufficient valid RSSI samples"]
+    
+    details = []
+    spoofing_indicators = 0
+    confidence = 0
+    
+    # 1. Check for impossible RSSI jumps (device teleportation)
+    # A real router doesn't move, so RSSI should be relatively stable
+    max_rssi = max(valid_rssi[-10:])  # Last 10 samples
+    min_rssi = min(valid_rssi[-10:])
+    rssi_range = max_rssi - min_rssi
+    
+    if rssi_range > 30:
+        spoofing_indicators += 3
+        confidence += 40
+        details.append(f"🚩 EXTREME RSSI jump: {rssi_range}dB (>30dB suggests multiple transmitters)")
+    elif rssi_range > 20:
+        spoofing_indicators += 2
+        confidence += 30
+        details.append(f"🚩 Large RSSI jump: {rssi_range}dB (>20dB very suspicious)")
+    elif rssi_range > 15:
+        spoofing_indicators += 1
+        confidence += 15
+        details.append(f"⚠️  Significant RSSI variation: {rssi_range}dB")
+    
+    # 2. Check for sudden jumps between consecutive packets
+    # Real devices show gradual RSSI changes due to environmental factors
+    sudden_jumps = 0
+    for i in range(1, min(len(valid_rssi), 20)):
+        jump = abs(valid_rssi[i] - valid_rssi[i-1])
+        if jump > 15:
+            sudden_jumps += 1
+    
+    if sudden_jumps > 3:
+        spoofing_indicators += 2
+        confidence += 25
+        details.append(f"🚩 Multiple sudden RSSI jumps: {sudden_jumps} times (>15dB each)")
+    elif sudden_jumps > 1:
+        spoofing_indicators += 1
+        confidence += 15
+        details.append(f"⚠️  Sudden RSSI jumps detected: {sudden_jumps} times")
+    
+    # 3. Check standard deviation - real routers have low variance
+    import statistics
+    if len(valid_rssi) >= 5:
+        std_dev = statistics.stdev(valid_rssi[-20:])  # Last 20 samples
+        if std_dev > 8:
+            spoofing_indicators += 2
+            confidence += 20
+            details.append(f"🚩 High RSSI instability: σ={std_dev:.1f}dB (suggests movement/multiple sources)")
+        elif std_dev > 5:
+            spoofing_indicators += 1
+            confidence += 10
+            details.append(f"⚠️  Moderate RSSI variation: σ={std_dev:.1f}dB")
+    
+    # 4. Check for bimodal distribution (two distinct signal strengths)
+    # This suggests two different transmitters using the same MAC
+    if len(valid_rssi) >= 10:
+        # Split into strong and weak signal groups
+        median_rssi = statistics.median(valid_rssi[-20:])
+        strong_signals = [r for r in valid_rssi[-20:] if r > median_rssi + 5]
+        weak_signals = [r for r in valid_rssi[-20:] if r < median_rssi - 5]
+        
+        if len(strong_signals) > 3 and len(weak_signals) > 3:
+            # Check if the two groups are distinctly separated
+            if strong_signals and weak_signals:
+                gap = min(strong_signals) - max(weak_signals)
+                if gap > 10:
+                    spoofing_indicators += 3
+                    confidence += 35
+                    details.append(f"🚩 BIMODAL signal pattern detected: {gap}dB gap (MULTIPLE TRANSMITTERS)")
+    
+    # 5. Estimate if RSSI suggests attacker is moving impossibly fast
+    # Calculate implied speed based on RSSI changes
+    if len(valid_rssi) >= 5 and len(attacker.get('inter_packet_intervals', [])) >= 4:
+        time_span = sum(attacker['inter_packet_intervals'][-4:])  # Last 4 intervals
+        if time_span > 0:
+            rssi_change = abs(valid_rssi[-1] - valid_rssi[-5])
+            # Rough estimate: 6dB change ≈ doubling/halving distance
+            # For TX_POWER=20, RSSI=-40 ≈ 7m, RSSI=-46 ≈ 14m
+            if rssi_change > 10:
+                distance_change_estimate = 10 ** ((rssi_change) / (10 * PATH_LOSS_EXP))
+                speed_estimate = distance_change_estimate / time_span if time_span > 0 else 0
+                if speed_estimate > 5:  # Moving >5 m/s (18 km/h) is unusual for router
+                    spoofing_indicators += 2
+                    confidence += 20
+                    details.append(f"🚩 Implied movement speed: ~{speed_estimate:.1f}m/s (impossible for stationary router)")
+    
+    # 6. Add distance estimates to help locate attacker
+    if valid_rssi:
+        current_rssi = valid_rssi[-1]
+        current_distance = estimate_distance(current_rssi)
+        strongest_rssi = max(valid_rssi)
+        closest_distance = estimate_distance(strongest_rssi)
+        
+        details.append(f"📍 Current distance estimate: {current_distance} (RSSI: {current_rssi}dB)")
+        details.append(f"📍 Closest observed: {closest_distance} (RSSI: {strongest_rssi}dB)")
+    
+    # Determine if spoofed based on indicators
+    is_spoofed = spoofing_indicators >= 2 or confidence >= 50
+    confidence = min(confidence, 95)  # Cap at 95% (never 100% certain)
+    
+    return is_spoofed, confidence, details
+
 def track_attacker(real_mac, spoofed_src, rssi, attack_type, dst, bssid, rate=None, antenna=None, retry=False, pkt=None):
     """Track attacker-specific information"""
     global total_attacks
@@ -400,6 +521,19 @@ def packet_handler(pkt):
         dst = pkt.addr1.lower() if pkt.addr1 else "unknown"
         bssid = pkt.addr3.lower() if pkt.addr3 else "unknown"
         
+        # 🔒 FILTER: Only monitor attacks on YOUR network
+        # Check if attack involves your router or local devices
+        involves_your_network = False
+        if bssid in WHITELISTED_DEVICES or bssid in LOCAL_DEVICE_MACS:
+            involves_your_network = True
+        elif dst in WHITELISTED_DEVICES or dst in LOCAL_DEVICE_MACS:
+            involves_your_network = True
+        elif src in WHITELISTED_DEVICES or src in LOCAL_DEVICE_MACS:
+            involves_your_network = True
+        
+        if not involves_your_network:
+            return  # Ignore attacks on other networks
+        
         # Extract sequence number for fingerprinting
         seq_num = pkt.SC >> 4 if hasattr(pkt, 'SC') else None
         
@@ -590,6 +724,18 @@ def packet_handler(pkt):
         if retry_flag:
             print(f"    ⚠️  RETRY FLAG:     Packet was retransmitted (unusual for deauth)")
         
+        # RSSI-based spoofing detection
+        is_rssi_spoofed, rssi_confidence, rssi_details = analyze_rssi_for_spoofing(attacker_mac)
+        if is_rssi_spoofed or rssi_confidence > 30:
+            print(f"\n🔍 RSSI SPOOFING ANALYSIS:")
+            if is_rssi_spoofed:
+                print(f"    🚨 SPOOFING DETECTED: {rssi_confidence}% confidence")
+                print(f"    ⚠️  EVIDENCE: Signal patterns indicate multiple transmitters or movement")
+            else:
+                print(f"    ⚠️  SUSPICIOUS: {rssi_confidence}% confidence of spoofing")
+            for detail in rssi_details:
+                print(f"    {detail}")
+        
         print(f"\n📊 ATTACK STATISTICS:")
         print(f"    Attack Rate:       {attack_rate} attacks/minute")
         print(f"    Total Attacks:     {attacker['total_attacks']}")
@@ -615,11 +761,11 @@ def packet_handler(pkt):
             for anomaly in seq_anomalies:
                 print(f"    ⚠️  {anomaly}")
         
-        # RSSI stability check
+        # Legacy RSSI check (kept for backward compatibility)
         if len(attacker['rssi_values']) > 3:
             rssi_vals = attacker['rssi_values'][-4:]
             rssi_range = max(rssi_vals) - min(rssi_vals)
-            if rssi_range > 20:
+            if rssi_range > 20 and not is_rssi_spoofed:  # Only show if not already shown above
                 print(f"\n📍 LOCATION ANOMALY:")
                 print(f"    ⚠️  RSSI variance: {rssi_range} dBm (device moving impossibly fast!)")
                 print(f"    ⚠️  OR: Multiple devices using same spoofed MAC")
@@ -641,6 +787,43 @@ def packet_handler(pkt):
         print(f"    Spoofed MACs Used: {len(attacker['spoofed_macs'])}")
         if len(attacker['spoofed_macs']) > 1:
             print(f"    ⚠️  Using multiple fake identities: {', '.join(list(attacker['spoofed_macs'])[:3])}{'...' if len(attacker['spoofed_macs']) > 3 else ''}")
+        
+        # Location guidance based on RSSI
+        if len(attacker['rssi_values']) > 0:
+            valid_rssi = [r for r in attacker['rssi_values'] if r is not None and r != "Unknown"]
+            if valid_rssi:
+                print(f"\n🎯 ATTACKER LOCATION GUIDANCE:")
+                current_rssi = valid_rssi[-1]
+                strongest_rssi = max(valid_rssi)
+                weakest_rssi = min(valid_rssi)
+                
+                current_dist = estimate_distance(current_rssi)
+                closest_dist = estimate_distance(strongest_rssi)
+                farthest_dist = estimate_distance(weakest_rssi)
+                
+                print(f"    Current Position:  {current_dist} away (RSSI: {current_rssi}dB)")
+                print(f"    Closest Detected:  {closest_dist} away (RSSI: {strongest_rssi}dB)")
+                print(f"    Range Observed:    {weakest_rssi}dB to {strongest_rssi}dB ({abs(strongest_rssi - weakest_rssi)}dB range)")
+                
+                # Provide locating tips
+                print(f"\n    💡 LOCATING TIPS:")
+                if current_rssi > -40:
+                    print(f"       • Attacker is VERY CLOSE (strong signal)")
+                    print(f"       • Check devices within 5 meters")
+                    print(f"       • Look for laptops, phones, or unknown devices nearby")
+                elif current_rssi > -60:
+                    print(f"       • Attacker is NEARBY (medium signal)")
+                    print(f"       • Check within 10-20 meters")
+                    print(f"       • Walk around to triangulate - signal should strengthen as you approach")
+                else:
+                    print(f"       • Attacker is FAR or signal is weak")
+                    print(f"       • May be outside the building or using low-power mode")
+                    print(f"       • Monitor for stronger bursts to locate")
+                
+                if is_rssi_spoofed or (len(valid_rssi) > 5 and max(valid_rssi) - min(valid_rssi) > 20):
+                    print(f"       • ⚠️  WARNING: Signal pattern suggests MULTIPLE LOCATIONS")
+                    print(f"       • May be multiple attackers or attacker is moving")
+                    print(f"       • Focus on most recent/strongest signals")
         
         print("\n" + "="*90 + "\n")
         

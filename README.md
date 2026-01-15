@@ -201,6 +201,20 @@ Generate test deauth packets (for testing on your own network only):
 sudo aireplay-ng --deauth 5 -a ROUTER_MAC -c CLIENT_MAC wlan1mon
 ```
 
+## Documentation
+
+Comprehensive documentation is available in the `/docs` folder:
+
+- **[Getting Started Guide](docs/getting-started.md)** - Installation and setup
+- **[Deauth Detector Guide](docs/deauth-detector.md)** - Complete usage guide
+- **[Network Monitor Guide](docs/network-monitor.md)** - Device tracking guide
+- **[Configuration Reference](docs/configuration.md)** - All settings explained
+- **[Troubleshooting Guide](docs/troubleshooting.md)** - Common issues and solutions
+- **[FAQ](docs/faq.md)** - Frequently asked questions
+- **[Project Summary](docs/project-summary.md)** - Detailed project overview
+- **[Architecture Overview](docs/architecture.md)** - Technical details
+- **[API Reference](docs/api-reference.md)** - Code documentation
+
 ## Contributing
 
 Contributions welcome! Please:
@@ -208,6 +222,8 @@ Contributions welcome! Please:
 2. Create a feature branch
 3. Test on multiple adapters if possible
 4. Submit pull request with clear description
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## License
 

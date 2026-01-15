@@ -34,7 +34,7 @@ except json.JSONDecodeError as e:
 
 # Load settings
 interface = config['network']['interface']
-HOSTNAME_INTERFACE = "wlan0"  # Interface for hostname capture (managed mode)
+HOSTNAME_INTERFACE = None  # Disabled - only use USB adapter
 CHANNELS = config['network']['channels']
 DWELL_TIME = config['network']['channel_dwell_time']
 KNOWN_DEVICES = [mac.lower() for mac in config['network']['known_devices']]
@@ -488,6 +488,10 @@ def channel_hopper():
 
 def hostname_sniffer():
     """Continuously sniff wlan0 for DHCP/mDNS hostnames"""
+    if not HOSTNAME_INTERFACE:
+        print(f"[*] Hostname capture disabled - only using USB adapter")
+        return
+    
     print(f"[*] Starting continuous hostname capture on {HOSTNAME_INTERFACE}...")
     
     def hostname_packet_handler(pkt):
